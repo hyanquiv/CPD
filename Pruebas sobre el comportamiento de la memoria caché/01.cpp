@@ -2,6 +2,7 @@
 #include <vector>
 #include <chrono>
 #include <fstream>
+#include <numeric> // Para std::accumulate
 
 #define MAX 5000
 
@@ -26,17 +27,9 @@ void first_loop(const std::vector<std::vector<double>> &A, const std::vector<dou
     {
         for (int j = 0; j < size; ++j)
         {
-            // Cada acceso A[i][j] sigue un patrón de acceso secuencial por fila,
-            // lo que favorece la localización espacial en caché.
             y[i] += A[i][j] * x[j];
         }
     }
-    // Comentario sobre caché:
-    // En este caso, la matriz A se recorre por filas. En la mayoría de los sistemas,
-    // las matrices se almacenan en memoria de manera continua por filas (orden fila-major).
-    // Este patrón de acceso secuencial aprovecha la localización espacial de la caché,
-    // ya que los elementos consecutivos de la fila de A están cerca en la memoria,
-    // reduciendo las fallas de caché.
 }
 
 // Segundo bucle: se recorre por columnas (j) y luego por filas (i)
@@ -46,63 +39,70 @@ void second_loop(const std::vector<std::vector<double>> &A, const std::vector<do
     {
         for (int i = 0; i < size; ++i)
         {
-            // Aquí se accede a A[i][j], pero en este caso, el patrón de acceso es por columnas.
-            // Esto implica saltos de memoria, lo que es menos eficiente en términos de caché.
             y[i] += A[i][j] * x[j];
         }
     }
-    // Comentario sobre caché:
-    // En este segundo bucle, se accede a la matriz A por columnas. Dado que la memoria se organiza por filas,
-    // esto significa que los elementos que se acceden en A[i][j] no están secuencialmente en memoria.
-    // Esto puede resultar en más fallos de caché, ya que al acceder a un elemento de una columna,
-    // el siguiente elemento que se accede puede estar lejos en la memoria, forzando recargas en caché.
 }
 
 int main()
 {
     std::ofstream csvfile;
-    csvfile.open("loop_times.csv");
-    csvfile << "Matrix Size,First Loop (ms),Second Loop (ms)\n";
+    csvfile.open("loop_times.csv");              
+    csvfile << "Matrix Size,First Loop Avg Time (ms),Second Loop Avg Time (ms)\n";
 
     std::vector<int> sizes = {10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000};
+    int num_trials = 50; // Número de pruebas para promediar
 
     for (int size : sizes)
     {
-        // Crear la matriz A y los vectores x e y para el tamaño actual
-        std::vector<std::vector<double>> A(size, std::vector<double>(size));
-        std::vector<double> x(size), y(size);
+        // Vectores para almacenar tiempos
+        std::vector<double> first_loop_times;
+        std::vector<double> second_loop_times;
 
-        // Inicializa A, x e y
-        initialize_matrix(A, x, y, size);
+        for (int trial = 0; trial < num_trials; ++trial)
+        {
+            // Crear la matriz A y los vectores x e y para el tamaño actual
+            std::vector<std::vector<double>> A(size, std::vector<double>(size));
+            std::vector<double> x(size), y(size);
 
-        // Medir el tiempo del primer bucle
-        auto start = std::chrono::high_resolution_clock::now();
-        first_loop(A, x, y, size);
-        auto end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> first_loop_time = end - start;
+            // Inicializa A, x e y
+            initialize_matrix(A, x, y, size);
 
-        // Re-inicializa y a 0
-        std::fill(y.begin(), y.end(), 0.0);
+            // Medir el tiempo del primer bucle
+            auto start = std::chrono::high_resolution_clock::now();
+            first_loop(A, x, y, size);
+            auto end = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double, std::milli> first_loop_time = end - start;
+            first_loop_times.push_back(first_loop_time.count()); // Almacena el tiempo
 
-        // Medir el tiempo del segundo bucle
-        start = std::chrono::high_resolution_clock::now();
-        second_loop(A, x, y, size);
-        end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> second_loop_time = end - start;
+            // Re-inicializa y a 0
+            std::fill(y.begin(), y.end(), 0.0);
 
-        // Guarda los tiempos en el archivo CSV
-        csvfile << size << "," << first_loop_time.count() << "," << second_loop_time.count() << "\n";
-        std::cout << "Size " << size << " done." << std::endl;
+            // Medir el tiempo del segundo bucle
+            start = std::chrono::high_resolution_clock::now();
+            second_loop(A, x, y, size);
+            end = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double, std::milli> second_loop_time = end - start;
+            second_loop_times.push_back(second_loop_time.count()); // Almacena el tiempo
 
-        // Liberar memoria explicitamente al reducir el tamaño de los vectores a 0
-        A.clear();         // Libera memoria de la matriz A
-        A.shrink_to_fit(); // Libera la capacidad asignada en exceso
+            // Liberar memoria explicitamente
+            A.clear();         // Libera memoria de la matriz A
+            A.shrink_to_fit(); // Libera la capacidad asignada en exceso
 
-        x.clear();         // Libera memoria del vector x
-        x.shrink_to_fit(); // Libera la capacidad asignada en exceso
+            x.clear();         // Libera memoria del vector x
+            x.shrink_to_fit(); // Libera la capacidad asignada en exceso
 
-        y.clear();         // Libera memoria del vector y
-        y.shrink_to_fit(); // Libera la capacidad asignada en exceso
+            y.clear();         // Libera memoria del vector y
+            y.shrink_to_fit(); // Libera la capacidad asignada en exceso
+        }
+
+        // Calcular los promedios de tiempo
+        double first_loop_avg = std::accumulate(first_loop_times.begin(), first_loop_times.end(), 0.0) / num_trials;
+        double second_loop_avg = std::accumulate(second_loop_times.begin(), second_loop_times.end(), 0.0) / num_trials;
+
+        // Guarda los promedios en el archivo CSV
+        csvfile << size << "," << first_loop_avg << "," << second_loop_avg << "\n";
+        std::cout << "Matrix size " << size << " done. First Loop Avg: " << first_loop_avg << " ms, Second Loop Avg: " << second_loop_avg << " ms." << std::endl;
     }
 
     csvfile.close();

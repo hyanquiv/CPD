@@ -21,23 +21,17 @@ void matrix_multiplication(const std::vector<std::vector<double>> &A,
                            const std::vector<std::vector<double>> &B,
                            std::vector<std::vector<double>> &C, int size)
 {
-    // Bucle externo recorre filas de A
     for (int i = 0; i < size; ++i)
     {
-        // Bucle intermedio recorre columnas de B
         for (int j = 0; j < size; ++j)
         {
-            C[i][j] = 0; // Inicializamos cada entrada de C a 0
-            // Bucle interno para realizar la multiplicación de la fila de A por la columna de B
+            C[i][j] = 0;
             for (int k = 0; k < size; ++k)
             {
-                C[i][j] += A[i][k] * B[k][j]; // Cálculo clásico de la multiplicación
+                C[i][j] += A[i][k] * B[k][j];
             }
         }
     }
-    // Nota: Este enfoque tiene problemas de caché. Los elementos de A se recorren por filas (bueno para caché),
-    // pero los elementos de B se recorren por columnas, lo que causa saltos en la memoria (malo para caché),
-    // resultando en posibles fallos de caché y mayor tiempo de acceso a la memoria principal.
 }
 
 // Multiplicación por bloques (seis bucles anidados)
@@ -45,14 +39,12 @@ void block_matrix_multiplication(const std::vector<std::vector<double>> &A,
                                  const std::vector<std::vector<double>> &B,
                                  std::vector<std::vector<double>> &C, int size, int block_size)
 {
-    // Los tres bucles externos dividen la matriz en bloques
     for (int ii = 0; ii < size; ii += block_size)
     {
         for (int jj = 0; jj < size; jj += block_size)
         {
             for (int kk = 0; kk < size; kk += block_size)
             {
-                // Los tres bucles internos recorren los elementos dentro de los bloques
                 for (int i = ii; i < std::min(ii + block_size, size); ++i)
                 {
                     for (int j = jj; j < std::min(jj + block_size, size); ++j)
@@ -66,14 +58,6 @@ void block_matrix_multiplication(const std::vector<std::vector<double>> &A,
             }
         }
     }
-    // Este enfoque mejora el comportamiento en la caché:
-    // 1. En lugar de recorrer toda la matriz B columna por columna (lo cual es malo para la caché),
-    //    ahora operamos en bloques pequeños, donde los datos de A, B y C en cada bloque pueden caber
-    //    en la caché del procesador.
-    // 2. Al operar dentro de bloques, se reduce el número de fallos de caché, ya que se reutilizan más
-    //    eficientemente los mismos datos antes de que se expulsen de la caché.
-    // 3. En general, la multiplicación por bloques minimiza la necesidad de acceder a la memoria principal
-    //    constantemente, ya que los datos necesarios permanecen en la caché por más tiempo.
 }
 
 int main()
@@ -81,51 +65,85 @@ int main()
     // Abrir archivo CSV para guardar los resultados
     std::ofstream csvfile;
     csvfile.open("matrix_multiplication_comparison.csv");
-    csvfile << "Matrix Size,Classic Time (ms),Block Time (ms)\n";
+    csvfile << "Matrix Size,Classic Time (ms),Block Size 16 (ms),Block Size 32 (ms),Block Size 64 (ms),Block Size 128 (ms)\n";
 
-    // Tamaños de matriz que vamos a probar
+    // Tamaños de matrices y tamaños de bloque a evaluar
     std::vector<int> sizes = {10, 25, 50, 75, 100, 250, 500, 750, 1000};
-    int block_size = 64; // Tamaño de bloque para la multiplicación por bloques (típico para mejorar uso de caché)
+    std::vector<int> block_sizes = {16, 32, 64, 128}; // Diferentes tamaños de bloque para probar
+
+    int num_trials = 10; // Número de veces que se ejecutarán las pruebas para sacar promedio
 
     // Bucle para cada tamaño de matriz
     for (int size : sizes)
     {
-        // Crear las matrices A, B y C (A y B son las multiplicandas, C es la resultante)
-        std::vector<std::vector<double>> A(size, std::vector<double>(size));
-        std::vector<std::vector<double>> B(size, std::vector<double>(size));
-        std::vector<std::vector<double>> C(size, std::vector<double>(size, 0));
-        std::vector<std::vector<double>> C_block(size, std::vector<double>(size, 0));
+        double classic_avg_time = 0.0;
+        std::vector<double> block_avg_times(block_sizes.size(), 0.0);
 
-        // Inicializar matrices A y B con valores aleatorios
-        initialize_matrix(A, size);
-        initialize_matrix(B, size);
+        // Ejecutar las pruebas num_trials veces
+        for (int trial = 0; trial < num_trials; ++trial)
+        {
+            // Crear las matrices A, B y C
+            std::vector<std::vector<double>> A(size, std::vector<double>(size));
+            std::vector<std::vector<double>> B(size, std::vector<double>(size));
+            std::vector<std::vector<double>> C(size, std::vector<double>(size, 0));
+            std::vector<std::vector<double>> C_block(size, std::vector<double>(size, 0));
 
-        // --- Multiplicación clásica ---
-        auto start = std::chrono::high_resolution_clock::now();               // Iniciar cronómetro
-        matrix_multiplication(A, B, C, size);                                 // Ejecutar multiplicación clásica
-        auto end = std::chrono::high_resolution_clock::now();                 // Parar cronómetro
-        std::chrono::duration<double, std::milli> classic_time = end - start; // Tiempo en milisegundos
+            // Inicializar matrices A y B con valores aleatorios
+            initialize_matrix(A, size);
+            initialize_matrix(B, size);
 
-        // --- Multiplicación por bloques ---
-        start = std::chrono::high_resolution_clock::now();                  // Iniciar cronómetro
-        block_matrix_multiplication(A, B, C_block, size, block_size);       // Ejecutar multiplicación por bloques
-        end = std::chrono::high_resolution_clock::now();                    // Parar cronómetro
-        std::chrono::duration<double, std::milli> block_time = end - start; // Tiempo en milisegundos
+            // --- Multiplicación clásica ---
+            auto start = std::chrono::high_resolution_clock::now();               // Iniciar cronómetro
+            matrix_multiplication(A, B, C, size);                                 // Ejecutar multiplicación clásica
+            auto end = std::chrono::high_resolution_clock::now();                 // Parar cronómetro
+            std::chrono::duration<double, std::milli> classic_time = end - start; // Tiempo en milisegundos
+            classic_avg_time += classic_time.count();                             // Acumular tiempo
+
+            // --- Multiplicación por bloques con diferentes tamaños ---
+            for (size_t b = 0; b < block_sizes.size(); ++b)
+            {
+                // Reiniciar C_block
+                std::fill(C_block.begin(), C_block.end(), std::vector<double>(size, 0));
+
+                start = std::chrono::high_resolution_clock::now();                  // Iniciar cronómetro
+                block_matrix_multiplication(A, B, C_block, size, block_sizes[b]);   // Ejecutar multiplicación por bloques
+                end = std::chrono::high_resolution_clock::now();                    // Parar cronómetro
+                std::chrono::duration<double, std::milli> block_time = end - start; // Tiempo en milisegundos
+                block_avg_times[b] += block_time.count();                           // Acumular tiempo
+            }
+
+            // Liberar memoria de las matrices
+            A.clear();
+            B.clear();
+            C.clear();
+            C_block.clear();
+            A.shrink_to_fit();
+            B.shrink_to_fit();
+            C.shrink_to_fit();
+            C_block.shrink_to_fit();
+        }
+
+        // Promediar los tiempos
+        classic_avg_time /= num_trials;
+        for (double &block_avg_time : block_avg_times)
+        {
+            block_avg_time /= num_trials;
+        }
 
         // Guardar los resultados en el archivo CSV
-        csvfile << size << "," << classic_time.count() << "," << block_time.count() << "\n";
-        std::cout << "Matrix size " << size << " processed: Classic = " << classic_time.count()
-                  << " ms, Block = " << block_time.count() << " ms." << std::endl;
+        csvfile << size << "," << classic_avg_time;
+        for (const double block_avg_time : block_avg_times)
+        {
+            csvfile << "," << block_avg_time;
+        }
+        csvfile << "\n";
+        std::cout << "Matrix size " << size << " processed: Classic Avg = " << classic_avg_time << " ms." << std::endl;
 
-        // Liberar memoria de las matrices
-        A.clear();
-        B.clear();
-        C.clear();
-        C_block.clear();
-        A.shrink_to_fit();
-        B.shrink_to_fit();
-        C.shrink_to_fit();
-        C_block.shrink_to_fit();
+        // Mostrar los promedios de tiempos por bloques
+        for (size_t b = 0; b < block_sizes.size(); ++b)
+        {
+            std::cout << "Block Size " << block_sizes[b] << " Avg = " << block_avg_times[b] << " ms." << std::endl;
+        }
     }
 
     // Cerrar el archivo CSV
